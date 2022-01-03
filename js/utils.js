@@ -1,175 +1,203 @@
-/* global CONFIG */
+/* global Fluid, CONFIG */
 
-HTMLElement.prototype.wrap = function (wrapper) {
-  this.parentNode.insertBefore(wrapper, this);
-  this.parentNode.removeChild(this);
-  wrapper.appendChild(this);
-};
+window.requestAnimationFrame = window.requestAnimationFrame || window.webkitRequestAnimationFrame || window.mozRequestAnimationFrame;
 
-/**
- * 公共辅助函数
- */
-Yun.utils = {
-  /**
-   * 是否为主页
-   * @returns {boolean}
-   */
-  isHome() {
-    return window.location.pathname === CONFIG.root;
+Fluid.utils = {
+
+  listenScroll: function(callback) {
+    var dbc = new Debouncer(callback);
+    window.addEventListener('scroll', dbc, false);
+    dbc.handleEvent();
+    return dbc;
   },
 
-  /**
-   * 包裹表格，添加 class 以控制 table 样式
-   */
-  wrapTable() {
-    document.querySelectorAll("table").forEach((el) => {
-      const container = document.createElement("div");
-      container.className = "table-container";
-      el.wrap(container);
-    });
+  unlistenScroll: function(callback) {
+    window.removeEventListener('scroll', callback);
   },
 
-  /**
-   * 动态获取脚本，并执行回调函数
-   * @param {*} url
-   * @param {*} callback
-   * @param {*} condition 是否存在对应实例，判断是否加载脚本
-   */
-  getScript(url, callback, condition) {
-    if (condition) {
-      callback();
-    } else {
-      const script = document.createElement("script");
-      script.onload = () => {
-        setTimeout(callback);
-      };
-      script.src = url;
-      document.head.appendChild(script);
+  scrollToElement: function(target, offset) {
+    var of = jQuery(target).offset();
+    if (of) {
+      jQuery('html,body').animate({
+        scrollTop: of.top + (offset || 0),
+        easing   : 'swing'
+      });
     }
   },
 
-  /**
-   * click btn to copy codeblock
-   */
-  insertCopyCodeBtn() {
-    const codeblocks = document.querySelectorAll("pre[class*='language-']");
-
-    codeblocks.forEach((codeblock) => {
-      if (!CONFIG.copycode) return;
-
-      const container = document.createElement("div");
-      container.className = "code-container";
-      codeblock.wrap(container);
-
-      container.insertAdjacentHTML(
-        "beforeend",
-        '<div class="copy-btn"><svg class="icon"><use xlink:href="#icon-file-copy-line" aria-label="copy"></use></svg></div>'
-      );
-
-      const copyBtn = container.querySelector(".copy-btn");
-      copyBtn.addEventListener("click", () => {
-        const lines =
-          container.querySelector("code[class*='language-']") ||
-          container.querySelector(".token");
-        const code = lines.innerText;
-        const ta = document.createElement("textarea");
-        ta.style.top = window.scrollY + "px"; // Prevent page scrolling
-        ta.style.position = "absolute";
-        ta.style.opacity = "0";
-        ta.readOnly = true;
-        ta.value = code;
-        document.body.append(ta);
-        ta.select();
-        ta.setSelectionRange(0, code.length);
-        ta.readOnly = false;
-        // copy success
-        const result = document.execCommand("copy");
-        const iconName = result ? "#icon-check-line" : "#icon-timer-line";
-        const iconSvg = copyBtn.querySelector("svg use");
-        iconSvg.setAttribute("xlink:href", iconName);
-        iconSvg.setAttribute("color", result ? "green" : "red");
-
-        ta.blur(); // For iOS
-        copyBtn.blur();
-        document.body.removeChild(ta);
-      });
-
-      container.addEventListener("mouseleave", () => {
-        setTimeout(() => {
-          const iconSvg = copyBtn.querySelector("svg use");
-          iconSvg.setAttribute("xlink:href", "#icon-file-copy-line");
-          iconSvg.setAttribute("color", "gray");
-        }, 200);
-      });
-    });
+  elementVisible: function(element, offsetFactor) {
+    offsetFactor = (offsetFactor && offsetFactor >= 0) ? offsetFactor : 0;
+    var rect = element.getBoundingClientRect();
+    var height = window.innerHeight || document.documentElement.clientHeight;
+    var top = rect.top;
+    return (top >= 0 && top <= height * (offsetFactor + 1))
+      || (top <= 0 && top >= -(height * offsetFactor) - rect.height);
   },
 
-  /**
-   * 使用 KaTeX 渲染公式
-   * 须已引入 KaTeX CDN
-   * https://github.com/KaTeX/KaTeX
-   */
-  renderKatex() {
-    if (typeof renderMathInElement !== "undefined") {
-      renderMathInElement(document.body, {
-        delimiters: [
-          { left: "$$", right: "$$", display: true },
-          { left: "$", right: "$", display: false },
-          { left: "\\(", right: "\\)", display: false },
-          { left: "\\[", right: "\\]", display: true },
-        ],
-      });
-    } else {
-      console.error(
-        "Please check if you have introduced KaTeX(https://github.com/KaTeX/KaTeX) CDN."
-      );
-    }
-  },
-
-  /**
-   * 注册监听滚动百分比事件
-   */
-  registerScrollPercent() {
-    const backToTop = document.querySelector("#back-to-top");
-    const progressCircle = document.querySelector("#progressCircle");
-
-    if (!backToTop) {
+  waitElementVisible: function(selectorOrElement, callback, offsetFactor) {
+    var runningOnBrowser = typeof window !== 'undefined';
+    var isBot = (runningOnBrowser && !('onscroll' in window)) ||
+      (typeof navigator !== 'undefined' && /(gle|ing|ro|msn)bot|crawl|spider|yand|duckgo/i.test(navigator.userAgent));
+    if (!runningOnBrowser || isBot) {
       return;
     }
 
-    /**
-     * 页面滚动百分比
-     * @param {number} curTop
-     */
-    function scrollPercent(curTop) {
-      const bodyHeight = document.body.clientHeight;
-      const windowHeight = window.innerHeight;
-      const circumference = progressCircle.r.baseVal.value * 2 * Math.PI;
-      const offset =
-        circumference - (curTop / (bodyHeight - windowHeight)) * circumference;
-      progressCircle.setAttribute(
-        "stroke-dasharray",
-        `${circumference} ${circumference}`
-      );
-      progressCircle.setAttribute("stroke-dashoffset", offset);
+    offsetFactor = (offsetFactor && offsetFactor >= 0) ? offsetFactor : 0;
+
+    function waitInViewport(element) {
+      if (Fluid.utils.elementVisible(element, offsetFactor)) {
+        callback();
+        return;
+      }
+      if ('IntersectionObserver' in window) {
+        var io = new IntersectionObserver(function(entries, ob) {
+          if (entries[0].isIntersecting) {
+            callback();
+            ob.disconnect();
+          }
+        }, {
+          threshold : [0],
+          rootMargin: (window.innerHeight || document.documentElement.clientHeight) * offsetFactor + 'px'
+        });
+        io.observe(element);
+      } else {
+        var wrapper = Fluid.utils.listenScroll(function() {
+          if (Fluid.utils.elementVisible(element, offsetFactor)) {
+            Fluid.utils.unlistenScroll(wrapper);
+            callback();
+          }
+        });
+      }
     }
 
-    window.addEventListener("scroll", () => {
-      backToTop.classList.toggle("show", window.scrollY > 64);
-      scrollPercent(window.scrollY);
-    });
+    if (typeof selectorOrElement === 'string') {
+      this.waitElementLoaded(selectorOrElement, function(element) {
+        waitInViewport(element);
+      });
+    } else {
+      waitInViewport(selectorOrElement);
+    }
+  },
+
+  waitElementLoaded: function(selector, callback) {
+    var runningOnBrowser = typeof window !== 'undefined';
+    var isBot = (runningOnBrowser && !('onscroll' in window)) ||
+      (typeof navigator !== 'undefined' && /(gle|ing|ro|msn)bot|crawl|spider|yand|duckgo/i.test(navigator.userAgent));
+    if (!runningOnBrowser || isBot) {
+      return;
+    }
+
+    if ('MutationObserver' in window) {
+      var mo = new MutationObserver(function(records, ob) {
+        var ele = document.querySelector(selector);
+        if (ele) {
+          callback(ele);
+          ob.disconnect();
+        }
+      });
+      mo.observe(document, { childList: true, subtree: true });
+    } else {
+      document.addEventListener('DOMContentLoaded', function() {
+        var waitLoop = function() {
+          var ele = document.querySelector(selector);
+          if (ele) {
+            callback(ele);
+          } else {
+            setTimeout(waitLoop, 100);
+          }
+        };
+        waitLoop();
+      });
+    }
+  },
+
+  createScript: function(url, onload) {
+    var s = document.createElement('script');
+    s.setAttribute('src', url);
+    s.setAttribute('type', 'text/javascript');
+    s.setAttribute('charset', 'UTF-8');
+    s.async = false;
+    if (typeof onload === 'function') {
+      if (window.attachEvent) {
+        s.onreadystatechange = function() {
+          var e = s.readyState;
+          if (e === 'loaded' || e === 'complete') {
+            s.onreadystatechange = null;
+            onload();
+          }
+        };
+      } else {
+        s.onload = onload;
+      }
+    }
+    var e = document.getElementsByTagName('script')[0]
+    || document.getElementsByTagName('head')[0]
+    || document.head || document.documentElement;
+    e.parentNode.insertBefore(s, e);
+  },
+
+  createCssLink: function(url) {
+    var l = document.createElement('link');
+    l.setAttribute('rel', 'stylesheet');
+    l.setAttribute('type', 'text/css');
+    l.setAttribute('href', url);
+    var e = document.getElementsByTagName('link')[0]
+    || document.getElementsByTagName('head')[0]
+    || document.head || document.documentElement;
+    e.parentNode.insertBefore(l, e);
+  },
+
+  loadComments: function(selectors, loadFunc) {
+    var ele = document.querySelector('#comments[lazyload]');
+    if (ele) {
+      var callback = function() {
+        loadFunc();
+        ele.removeAttribute('lazyload');
+      };
+      Fluid.utils.waitElementVisible(selectors, callback, CONFIG.lazyload.offset_factor);
+    } else {
+      loadFunc();
+    }
+  }
+
+};
+
+/**
+ * Handles debouncing of events via requestAnimationFrame
+ * @see http://www.html5rocks.com/en/tutorials/speed/animations/
+ * @param {Function} callback The callback to handle whichever event
+ */
+function Debouncer(callback) {
+  this.callback = callback;
+  this.ticking = false;
+}
+Debouncer.prototype = {
+  constructor: Debouncer,
+
+  /**
+   * dispatches the event to the supplied callback
+   * @private
+   */
+  update: function() {
+    this.callback && this.callback();
+    this.ticking = false;
   },
 
   /**
-   * 注册切换侧边栏按钮事件
+   * ensures events don't get stacked
+   * @private
    */
-  registerToggleSidebar() {
-    const toggleBtns = document.querySelectorAll(".sidebar-toggle");
-    toggleBtns.forEach((el) => {
-      el.addEventListener("click", () => {
-        document.querySelector(".hamburger").classList.toggle("is-active");
-        document.querySelector(".container").classList.toggle("sidebar-open");
-      });
-    });
+  requestTick: function() {
+    if (!this.ticking) {
+      requestAnimationFrame(this.rafCallback || (this.rafCallback = this.update.bind(this)));
+      this.ticking = true;
+    }
   },
+
+  /**
+   * Attach this as the event listeners
+   */
+  handleEvent: function() {
+    this.requestTick();
+  }
 };
